@@ -15,7 +15,7 @@ from google.genai import types
 
 app = FastAPI(title="WhatsApp AI Invoice & M-Pesa Bot")
 
-# Enable CORS so browser fetches aren't silently blocked
+# Enable CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -40,48 +40,130 @@ class STKPushRequest(BaseModel):
     amount: float
     account_reference: str
 
-# Serve UI
+# Serve Complete Embedded UI
 @app.get("/", response_class=HTMLResponse)
 async def serve_ui():
-    if os.path.exists("index.html"):
-        with open("index.html", "r", encoding="utf-8") as f:
-            return f.read()
-    return "<h1>API is running. index.html is missing in the root directory.</h1>"
+    return """
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>WhatsApp Invoice & Payment Simulator</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+    </head>
+    <body class="bg-slate-100 min-h-screen p-6 text-slate-800">
+        <div class="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-6">
+            
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                <h1 class="text-xl font-bold mb-4 text-slate-900">WhatsApp Invoicing & M-Pesa</h1>
+                
+                <div class="mb-6">
+                    <label class="block text-sm font-semibold mb-2">1. Incoming Message</label>
+                    <textarea id="userInput" rows="3" class="w-full p-3 border rounded-xl bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">Invoice John Doe for 2 Web Design items at 1500 each, due in 5 days.</textarea>
+                    <button id="parseBtn" class="mt-2 w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2 rounded-xl transition">
+                        Extract Invoice (AI)
+                    </button>
+                </div>
 
-# --- 1. AI PARSER ---
+                <div class="border-t pt-4">
+                    <label class="block text-sm font-semibold mb-2">2. Trigger M-Pesa STK Push</label>
+                    <div class="space-y-3">
+                        <input type="text" id="phone" placeholder="Phone" value="254708374149" class="w-full p-2 border rounded-lg text-sm bg-slate-50">
+                        <input type="number" id="amount" placeholder="Amount (KES)" value="3000" class="w-full p-2 border rounded-lg text-sm bg-slate-50">
+                        <input type="text" id="ref" placeholder="Reference" value="INV-1001" class="w-full p-2 border rounded-lg text-sm bg-slate-50">
+                        <button id="stkBtn" class="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-2 rounded-xl transition">
+                            Send STK Push Prompt
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-slate-900 text-slate-100 p-6 rounded-2xl shadow-lg font-mono text-xs overflow-auto h-96">
+                <div class="flex justify-between items-center mb-2 pb-2 border-b border-slate-800">
+                    <span class="text-slate-400 font-bold">SYSTEM LOGS</span>
+                    <span id="statusBadge" class="text-xs bg-slate-800 px-2 py-1 rounded text-emerald-400">Ready</span>
+                </div>
+                <pre id="output" class="whitespace-pre-wrap">Click a button above to run request...</pre>
+            </div>
+
+        </div>
+
+        <script>
+            document.getElementById('parseBtn').addEventListener('click', async () => {
+                const btn = document.getElementById('parseBtn');
+                const output = document.getElementById('output');
+                const msg = document.getElementById('userInput').value;
+
+                btn.disabled = true;
+                output.innerText = "Extracting with Gemini AI...";
+
+                try {
+                    const res = await fetch('/parse-invoice', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ user_message: msg })
+                    });
+                    const data = await res.json();
+                    output.innerText = JSON.stringify(data, null, 2);
+                    if (data.invoice && data.invoice.total_amount) {
+                        document.getElementById('amount').value = data.invoice.total_amount;
+                    }
+                } catch (err) {
+                    output.innerText = "Error connecting: " + err.message;
+                } finally {
+                    btn.disabled = false;
+                }
+            });
+
+            document.getElementById('stkBtn').addEventListener('click', async () => {
+                const btn = document.getElementById('stkBtn');
+                const output = document.getElementById('output');
+                const phone = document.getElementById('phone').value;
+                const amount = parseFloat(document.getElementById('amount').value);
+                const ref = document.getElementById('ref').value;
+
+                btn.disabled = true;
+                output.innerText = "Triggering Safaricom STK Push...";
+
+                try {
+                    const res = await fetch('/stk-push', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ phone_number: phone, amount: amount, account_reference: ref })
+                    });
+                    const data = await res.json();
+                    output.innerText = JSON.stringify(data, null, 2);
+                } catch (err) {
+                    output.innerText = "Error connecting: " + err.message;
+                } finally {
+                    btn.disabled = false;
+                }
+            });
+        </script>
+    </body>
+    </html>
+    """
+
+# --- AI & M-PESA LOGIC ---
 def _process_gemini(message: str):
     if not GEMINI_API_KEY:
-        return {"error": "GEMINI_API_KEY missing in Render environment variables."}
-    
+        return {"error": "GEMINI_API_KEY missing on Render"}
     try:
         client = genai.Client(api_key=GEMINI_API_KEY)
-        prompt = f"""
-        Extract structured invoice details from this text:
-        "{message}"
-
-        Return ONLY a raw JSON object matching this schema:
-        {{
-          "customer_name": "string",
-          "items": [{{"description": "string", "amount": float}}],
-          "total_amount": float,
-          "due_in_days": int
-        }}
-        """
+        prompt = f'Extract structured invoice details from: "{message}". Return raw JSON with fields customer_name, items, total_amount, due_in_days.'
         response = client.models.generate_content(
             model="gemini-2.5-flash",
             contents=prompt,
             config=types.GenerateContentConfig(response_mime_type="application/json")
         )
         data = json.loads(response.text)
-        
-        # Crypto Signature
         raw = f"{data.get('customer_name','')}:{data.get('total_amount',0)}"
         sig = hmac.new(SECRET_KEY.encode('utf-8'), raw.encode('utf-8'), hashlib.sha256).hexdigest()
         data["crypto_signature"] = sig
-        
         return {"status": "success", "invoice": data}
     except Exception as e:
-        return {"error": f"Gemini Error: {str(e)}"}
+        return {"error": str(e)}
 
 @app.post("/parse-invoice")
 async def parse_invoice(data: InvoiceRequest):
@@ -90,30 +172,20 @@ async def parse_invoice(data: InvoiceRequest):
         raise HTTPException(status_code=500, detail=result["error"])
     return result
 
-# --- 2. M-PESA STK PUSH ---
 def _process_stk(phone: str, amount: float, ref: str):
     if not all([DARAJA_CONSUMER_KEY, DARAJA_CONSUMER_SECRET, DARAJA_PASSKEY]):
-        return {
-            "status": "mock_success",
-            "message": f"Simulated STK Push for {phone} - KES {amount}",
-            "CheckoutRequestID": "ws_CO_MOCK_99999"
-        }
-
+        return {"status": "mock_success", "message": f"Simulated STK Push for {phone} - KES {amount}"}
     try:
         auth_url = "https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials"
         res = requests.get(auth_url, auth=(DARAJA_CONSUMER_KEY, DARAJA_CONSUMER_SECRET), timeout=10)
-        
         if res.status_code != 200:
             return {"error": f"Daraja Auth Failed: {res.text}"}
             
         access_token = res.json().get("access_token")
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-        password = base64.b64encode(
-            f"{DARAJA_BUSINESS_SHORTCODE}{DARAJA_PASSKEY}{timestamp}".encode("utf-8")
-        ).decode("utf-8")
+        password = base64.b64encode(f"{DARAJA_BUSINESS_SHORTCODE}{DARAJA_PASSKEY}{timestamp}".encode("utf-8")).decode("utf-8")
 
         headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
-        
         stk_payload = {
             "BusinessShortCode": DARAJA_BUSINESS_SHORTCODE,
             "Password": password,
@@ -127,16 +199,10 @@ def _process_stk(phone: str, amount: float, ref: str):
             "AccountReference": ref,
             "TransactionDesc": "Invoice Payment"
         }
-
-        stk_res = requests.post(
-            "https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest",
-            json=stk_payload,
-            headers=headers,
-            timeout=10
-        )
+        stk_res = requests.post("https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest", json=stk_payload, headers=headers, timeout=10)
         return stk_res.json()
     except Exception as e:
-        return {"error": f"STK Error: {str(e)}"}
+        return {"error": str(e)}
 
 @app.post("/stk-push")
 async def trigger_stk_push(payload: STKPushRequest):
