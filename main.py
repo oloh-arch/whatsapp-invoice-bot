@@ -30,17 +30,18 @@ class STKPushRequest(BaseModel):
     amount: float
     account_reference: str
 
+# Serve UI
 @app.get("/", response_class=HTMLResponse)
 async def serve_ui():
     if os.path.exists("index.html"):
         with open("index.html", "r", encoding="utf-8") as f:
             return f.read()
-    return "<h1>API is running. index.html missing in root folder.</h1>"
+    return "<h1>API is running. index.html is missing in the root directory.</h1>"
 
 # --- 1. AI PARSER ---
 def _process_gemini(message: str):
     if not GEMINI_API_KEY:
-        return {"error": "GEMINI_API_KEY missing on Render"}
+        return {"error": "GEMINI_API_KEY missing in Render environment variables."}
     
     try:
         client = genai.Client(api_key=GEMINI_API_KEY)
@@ -70,11 +71,10 @@ def _process_gemini(message: str):
         
         return {"status": "success", "invoice": data}
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": f"Gemini Error: {str(e)}"}
 
 @app.post("/parse-invoice")
 async def parse_invoice(data: InvoiceRequest):
-    # Runs blocking AI call in separate worker thread so API doesn't freeze
     result = await asyncio.to_thread(_process_gemini, data.user_message)
     if "error" in result:
         raise HTTPException(status_code=500, detail=result["error"])
@@ -90,7 +90,6 @@ def _process_stk(phone: str, amount: float, ref: str):
         }
 
     try:
-        # OAuth Token
         auth_url = "https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials"
         res = requests.get(auth_url, auth=(DARAJA_CONSUMER_KEY, DARAJA_CONSUMER_SECRET), timeout=10)
         
@@ -127,11 +126,10 @@ def _process_stk(phone: str, amount: float, ref: str):
         )
         return stk_res.json()
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": f"STK Error: {str(e)}"}
 
 @app.post("/stk-push")
 async def trigger_stk_push(payload: STKPushRequest):
-    # Runs blocking Daraja call in separate worker thread
     result = await asyncio.to_thread(_process_stk, payload.phone_number, payload.amount, payload.account_reference)
     if "error" in result:
         raise HTTPException(status_code=500, detail=result["error"])
