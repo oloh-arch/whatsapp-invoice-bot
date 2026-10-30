@@ -8,11 +8,21 @@ import asyncio
 from datetime import datetime
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from google import genai
 from google.genai import types
 
 app = FastAPI(title="WhatsApp AI Invoice & M-Pesa Bot")
+
+# Enable CORS so browser fetches aren't silently blocked
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Environment Variables
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
