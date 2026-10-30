@@ -4,6 +4,7 @@ import hmac
 import hashlib
 import base64
 import requests
+import asyncio
 from datetime import datetime
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
@@ -29,104 +30,113 @@ class STKPushRequest(BaseModel):
     amount: float
     account_reference: str
 
-# Serve frontend UI directly on root URL
 @app.get("/", response_class=HTMLResponse)
-def serve_ui():
+async def serve_ui():
     if os.path.exists("index.html"):
         with open("index.html", "r", encoding="utf-8") as f:
             return f.read()
-    return "<h1>API is running, but index.html was not found in root directory.</h1>"
+    return "<h1>API is running. index.html missing in root folder.</h1>"
 
-# --- 1. AI PARSER & CRYPTOGRAPHIC SIGNATURE ---
-@app.post("/parse-invoice")
-def parse_invoice(data: InvoiceRequest):
+# --- 1. AI PARSER ---
+def _process_gemini(message: str):
     if not GEMINI_API_KEY:
-        raise HTTPException(status_code=500, detail="GEMINI_API_KEY environment variable is missing.")
-
-    client = genai.Client(api_key=GEMINI_API_KEY)
-
-    prompt = f"""
-    Extract structured invoice details from this text message:
-    "{data.user_message}"
-
-    Return ONLY a raw JSON object matching this exact schema:
-    {{
-      "customer_name": "string",
-      "items": [
-        {{"description": "string", "amount": float}}
-      ],
-      "total_amount": float,
-      "due_in_days": int
-    }}
-    """
+        return {"error": "GEMINI_API_KEY missing on Render"}
+    
     try:
+        client = genai.Client(api_key=GEMINI_API_KEY)
+        prompt = f"""
+        Extract structured invoice details from this text:
+        "{message}"
+
+        Return ONLY a raw JSON object matching this schema:
+        {{
+          "customer_name": "string",
+          "items": [{{"description": "string", "amount": float}}],
+          "total_amount": float,
+          "due_in_days": int
+        }}
+        """
         response = client.models.generate_content(
             model="gemini-2.5-flash",
             contents=prompt,
             config=types.GenerateContentConfig(response_mime_type="application/json")
         )
-        parsed_data = json.loads(response.text)
+        data = json.loads(response.text)
         
-        # Cryptographic Signature
-        raw_payload = f"{parsed_data.get('customer_name','')}:{parsed_data.get('total_amount',0)}"
-        signature = hmac.new(
-            SECRET_KEY.encode('utf-8'),
-            raw_payload.encode('utf-8'),
-            hashlib.sha256
-        ).hexdigest()
-
-        parsed_data["crypto_signature"] = signature
-        return {"status": "success", "invoice": parsed_data}
+        # Crypto Signature
+        raw = f"{data.get('customer_name','')}:{data.get('total_amount',0)}"
+        sig = hmac.new(SECRET_KEY.encode('utf-8'), raw.encode('utf-8'), hashlib.sha256).hexdigest()
+        data["crypto_signature"] = sig
+        
+        return {"status": "success", "invoice": data}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"error": str(e)}
 
-# --- 2. SAFARICOM DARAJA M-PESA STK PUSH ---
-def get_daraja_access_token():
-    url = "https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials"
-    response = requests.get(url, auth=(DARAJA_CONSUMER_KEY, DARAJA_CONSUMER_SECRET))
-    if response.status_code == 200:
-        return response.json().get("access_token")
-    raise HTTPException(status_code=400, detail="Failed to fetch Daraja Access Token")
+@app.post("/parse-invoice")
+async def parse_invoice(data: InvoiceRequest):
+    # Runs blocking AI call in separate worker thread so API doesn't freeze
+    result = await asyncio.to_thread(_process_gemini, data.user_message)
+    if "error" in result:
+        raise HTTPException(status_code=500, detail=result["error"])
+    return result
 
-@app.post("/stk-push")
-def trigger_stk_push(payload: STKPushRequest):
+# --- 2. M-PESA STK PUSH ---
+def _process_stk(phone: str, amount: float, ref: str):
     if not all([DARAJA_CONSUMER_KEY, DARAJA_CONSUMER_SECRET, DARAJA_PASSKEY]):
         return {
             "status": "mock_success",
-            "message": f"STK Push simulated for {payload.phone_number} - KES {payload.amount}",
-            "CheckoutRequestID": "ws_CO_MOCK_123456789"
+            "message": f"Simulated STK Push for {phone} - KES {amount}",
+            "CheckoutRequestID": "ws_CO_MOCK_99999"
         }
 
-    access_token = get_daraja_access_token()
-    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    password = base64.b64encode(
-        f"{DARAJA_BUSINESS_SHORTCODE}{DARAJA_PASSKEY}{timestamp}".encode("utf-8")
-    ).decode("utf-8")
+    try:
+        # OAuth Token
+        auth_url = "https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials"
+        res = requests.get(auth_url, auth=(DARAJA_CONSUMER_KEY, DARAJA_CONSUMER_SECRET), timeout=10)
+        
+        if res.status_code != 200:
+            return {"error": f"Daraja Auth Failed: {res.text}"}
+            
+        access_token = res.json().get("access_token")
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        password = base64.b64encode(
+            f"{DARAJA_BUSINESS_SHORTCODE}{DARAJA_PASSKEY}{timestamp}".encode("utf-8")
+        ).decode("utf-8")
 
-    headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
-    
-    stk_payload = {
-        "BusinessShortCode": DARAJA_BUSINESS_SHORTCODE,
-        "Password": password,
-        "Timestamp": timestamp,
-        "TransactionType": "CustomerPayBillOnline",
-        "Amount": int(payload.amount),
-        "PartyA": payload.phone_number,
-        "PartyB": DARAJA_BUSINESS_SHORTCODE,
-        "PhoneNumber": payload.phone_number,
-        "CallBackURL": "https://whatsapp-invoice-bot.onrender.com/mpesa-callback",
-        "AccountReference": payload.account_reference,
-        "TransactionDesc": "Invoice Payment"
-    }
+        headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
+        
+        stk_payload = {
+            "BusinessShortCode": DARAJA_BUSINESS_SHORTCODE,
+            "Password": password,
+            "Timestamp": timestamp,
+            "TransactionType": "CustomerPayBillOnline",
+            "Amount": int(amount),
+            "PartyA": phone,
+            "PartyB": DARAJA_BUSINESS_SHORTCODE,
+            "PhoneNumber": phone,
+            "CallBackURL": "https://whatsapp-invoice-bot.onrender.com/mpesa-callback",
+            "AccountReference": ref,
+            "TransactionDesc": "Invoice Payment"
+        }
 
-    response = requests.post(
-        "https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest",
-        json=stk_payload,
-        headers=headers
-    )
-    return response.json()
+        stk_res = requests.post(
+            "https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest",
+            json=stk_payload,
+            headers=headers,
+            timeout=10
+        )
+        return stk_res.json()
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.post("/stk-push")
+async def trigger_stk_push(payload: STKPushRequest):
+    # Runs blocking Daraja call in separate worker thread
+    result = await asyncio.to_thread(_process_stk, payload.phone_number, payload.amount, payload.account_reference)
+    if "error" in result:
+        raise HTTPException(status_code=500, detail=result["error"])
+    return result
 
 @app.post("/mpesa-callback")
-def mpesa_callback(data: dict):
-    print("M-Pesa Callback Received:", data)
+async def mpesa_callback(data: dict):
     return {"ResultCode": 0, "ResultDesc": "Accepted"}
