@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp Invoice & M-Pesa Bot Dashboard</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        whatsapp: {
+                            DEFAULT: '#25D366',
+                            dark: '#075E54',
+                            light: '#128C7E',
+                            chat: '#0b141a'
+                        },
+                        mpesa: {
+                            DEFAULT: '#4CAF50',
+                            red: '#E53935'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Custom scrollbar for dark theme */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1f2937;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #374151;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #4b5563;
+        }
+    </style>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen flex flex-col justify-between selection:bg-whatsapp selection:text-black">
+
+    <!-- Top Navigation Header -->
+    <header class="border-b border-gray-800 bg-gray-900/80 backdrop-blur-md sticky top-0 z-40">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="bg-gradient-to-tr from-whatsapp-dark to-whatsapp p-2.5 rounded-xl shadow-lg shadow-whatsapp/20">
+                    <i data-lucide="bot" class="w-6 h-6 text-white"></i>
+                </div>
+                <div>
+                    <h1 class="font-bold text-lg leading-tight flex items-center gap-2">
+                        WhatsApp Invoice & M-Pesa
+                        <span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-whatsapp/10 text-whatsapp border border-whatsapp/20">v1.0 Live</span>
+                    </h1>
+                    <p class="text-xs text-gray-400">FastAPI + Gemini AI + Safaricom Daraja</p>
+                </div>
+            </div>
+
+            <!-- API Target Config Input -->
+            <div class="hidden md:flex items-center gap-2 bg-gray-800/80 px-3 py-1.5 rounded-lg border border-gray-700">
+                <i data-lucide="globe" class="w-4 h-4 text-gray-400"></i>
+                <span class="text-xs text-gray-400 font-medium">Target Host:</span>
+                <input id="apiHost" type="text" value="https://whatsapp-invoice-bot.onrender.com" 
+                       class="bg-transparent text-xs text-whatsapp focus:outline-none w-64 border-none p-0 font-mono"
+                       placeholder="https://your-app.onrender.com">
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full flex-grow">
+        
+        <!-- Target API Bar for Mobile -->
+        <div class="md:hidden mb-6 bg-gray-900 p-3 rounded-xl border border-gray-800 flex flex-col gap-1.5">
+            <label class="text-xs text-gray-400 font-medium flex items-center gap-1.5">
+                <i data-lucide="globe" class="w-3.5 h-3.5 text-whatsapp"></i> Backend API Endpoint URL
+            </label>
+            <input id="apiHostMobile" type="text" value="https://whatsapp-invoice-bot.onrender.com" 
+                   class="bg-gray-950 text-xs text-whatsapp focus:outline-none p-2 rounded-lg border border-gray-800 font-mono w-full">
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            
+            <!-- LEFT COLUMN: AI Invoice Parser Tester (7 Cols) -->
+            <section class="lg:col-span-7 space-y-6">
+                <div class="bg-gray-900 rounded-2xl border border-gray-800 p-6 shadow-xl relative overflow-hidden">
+                    <div class="absolute top-0 right-0 w-32 h-32 bg-whatsapp/5 rounded-full blur-2xl pointer-events-none"></div>
+
+                    <!-- Header -->
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="flex items-center gap-2.5">
+                            <div class="p-2 bg-whatsapp/10 rounded-lg text-whatsapp">
+                                <i data-lucide="sparkles" class="w-5 h-5"></i>
+                            </div>
+                            <h2 class="text-lg font-bold text-gray-100">1. AI Invoice Parser Test</h2>
+                        </div>
+                        <span class="text-xs text-gray-400 bg-gray-800 px-2.5 py-1 rounded-md font-mono">POST /parse-invoice</span>
+                    </div>
+
+                    <p class="text-sm text-gray-400 mb-4">
+                        Simulate a seller typing an unformatted invoice message on WhatsApp. Gemini 2.5 Flash will extract structured data and generate a cryptographic signature.
+                    </p>
+
+                    <!-- Input Box -->
+                    <div class="space-y-3">
+                        <label for="userMessage" class="block text-xs font-semibold uppercase tracking-wider text-gray-400">
+                            Raw WhatsApp Message
+                        </label>
+                        <div class="relative">
+                            <textarea id="userMessage" rows="3" 
+                                      class="w-full bg-gray-950 border border-gray-800 rounded-xl p-3.5 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-whatsapp transition-colors resize-none"
+                                      placeholder="e.g. Bill Mercy KES 4500 for logo design and KES 1500 for hosting due in 3 days.">Bill Mercy KES 4500 for logo design and KES 1500 for hosting due in 3 days.</textarea>
+                        </div>
+
+                        <!-- Example Preset Buttons -->
+                        <div class="flex flex-wrap gap-2 pt-1">
+                            <span class="text-xs text-gray-500 self-center">Presets:</span>
+                            <button onclick="setPreset('Bill Mercy KES 4500 for logo design and KES 1500 for hosting due in 3 days.')" 
+                                    class="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 px-2.5 py-1 rounded-lg transition-colors border border-gray-700">
+                                🎨 Logo & Hosting
+                            </button>
+                            <button onclick="setPreset('Invoice John Doe: 2x Web Domain KES 2000 each, Consulting KES 10000. Due in 7 days')" 
+                                    class="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 px-2.5 py-1 rounded-lg transition-colors border border-gray-700">
+                                💻 Web Consulting
+                            </button>
+                        </div>
+
+                        <!-- Execute Button -->
+                        <button id="btnParseInvoice" onclick="executeParseInvoice()" 
+                                class="w-full mt-2 bg-gradient-to-r from-whatsapp-dark to-whatsapp hover:opacity-90 text-white font-semibold py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-whatsapp/10 active:scale-[0.99]">
+                            <i data-lucide="cpu" class="w-4 h-4"></i>
+                            <span>Parse Invoice with Gemini AI</span>
+                        </button>
+                    </div>
+
+                    <!-- Output Area -->
+                    <div class="mt-6 space-y-2">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-semibold uppercase tracking-wider text-gray-400">Parsed Output JSON</span>
+                            <span id="parseStatusBadge" class="hidden text-xs font-mono px-2 py-0.5 rounded bg-gray-800 text-gray-400">200 OK</span>
+                        </div>
+                        <div class="relative bg-gray-950 border border-gray-800 rounded-xl p-4 min-h-[180px] font-mono text-xs overflow-x-auto">
+                            <pre id="parseJsonOutput" class="text-whatsapp/90">// Parsed structured JSON result will appear here after execution...</pre>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- RIGHT COLUMN: M-Pesa STK Push Simulator (5 Cols) -->
+            <section class="lg:col-span-5 space-y-6">
+                <div class="bg-gray-900 rounded-2xl border border-gray-800 p-6 shadow-xl relative overflow-hidden">
+                    <div class="absolute top-0 right-0 w-32 h-32 bg-green-500/5 rounded-full blur-2xl pointer-events-none"></div>
+
+                    <!-- Header -->
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="flex items-center gap-2.5">
+                            <div class="p-2 bg-green-500/10 rounded-lg text-green-400">
+                                <i data-lucide="phone-call" class="w-5 h-5"></i>
+                            </div>
+                            <h2 class="text-lg font-bold text-gray-100">2. M-Pesa STK Tester</h2>
+                        </div>
+                        <span class="text-xs text-gray-400 bg-gray-800 px-2.5 py-1 rounded-md font-mono">POST /stk-push</span>
+                    </div>
+
+                    <p class="text-sm text-gray-400 mb-4">
+                        Trigger a simulated or live Daraja STK Push prompt directly to the customer's mobile device.
+                    </p>
+
+                    <!-- Form Inputs -->
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1.5">
+                                Customer Phone Number (Format: 254...)
+                            </label>
+                            <div class="relative">
+                                <input id="stkPhone" type="text" value="254117641510" 
+                                       class="w-full bg-gray-950 border border-gray-800 rounded-xl p-3 text-sm text-gray-100 focus:outline-none focus:border-whatsapp font-mono">
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1.5">
+                                    Amount (KES)
+                                </label>
+                                <input id="stkAmount" type="number" value="1" 
+                                       class="w-full bg-gray-950 border border-gray-800 rounded-xl p-3 text-sm text-gray-100 focus:outline-none focus:border-whatsapp font-mono">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1.5">
+                                    Ref Code
+                                </label>
+                                <input id="stkRef" type="text" value="INV-1001" 
+                                       class="w-full bg-gray-950 border border-gray-800 rounded-xl p-3 text-sm text-gray-100 focus:outline-none focus:border-whatsapp font-mono">
+                            </div>
+                        </div>
+
+                        <!-- Auto-fill from parser action -->
+                        <button onclick="copyParsedAmountToStk()" class="w-full text-xs text-whatsapp hover:underline flex items-center justify-center gap-1.5 py-1">
+                            <i data-lucide="arrow-down-left" class="w-3.5 h-3.5"></i>
+                            Auto-fill amount & ref from parsed invoice
+                        </button>
+
+                        <!-- Trigger Button -->
+                        <button id="btnStkPush" onclick="executeStkPush()" 
+                                class="w-full bg-gradient-to-r from-emerald-600 to-green-500 hover:opacity-90 text-white font-semibold py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-green-500/10 active:scale-[0.99]">
+                            <i data-lucide="send" class="w-4 h-4"></i>
+                            <span>Send STK Push Request</span>
+                        </button>
+                    </div>
+
+                    <!-- Output Response -->
+                    <div class="mt-6 space-y-2">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-semibold uppercase tracking-wider text-gray-400">Response Payload</span>
+                            <span id="stkStatusBadge" class="hidden text-xs font-mono px-2 py-0.5 rounded bg-gray-800 text-gray-400">200 OK</span>
+                        </div>
+                        <div class="relative bg-gray-950 border border-gray-800 rounded-xl p-4 min-h-[140px] font-mono text-xs overflow-x-auto">
+                            <pre id="stkJsonOutput" class="text-green-400/90">// STK Push API response will appear here...</pre>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- Simulated Mobile Phone STK Modal Popup Overlay -->
+    <div id="phoneModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <!-- Phone Outline Shell -->
+        <div class="w-full max-w-[340px] bg-black rounded-[40px] p-3 border-4 border-gray-800 shadow-2xl relative animate-in fade-in zoom-in duration-200">
+            <!-- Camera Notch -->
+            <div class="w-28 h-4 bg-gray-900 mx-auto rounded-b-xl absolute top-3 left-1/2 -translate-x-1/2 z-20"></div>
+
+            <!-- Phone Screen -->
+            <div class="bg-gray-900 rounded-[32px] pt-10 pb-6 px-4 border border-gray-800 flex flex-col justify-between min-h-[480px] relative overflow-hidden">
+                
+                <!-- Screen Content (Simulated Homescreen) -->
+                <div class="space-y-4">
+                    <div class="text-center text-xs text-gray-500 font-medium">SIMULATED PHONE RECEIVER</div>
+                    <div class="flex justify-center my-6">
+                        <div class="w-16 h-16 rounded-2xl bg-whatsapp/20 border border-whatsapp/30 flex items-center justify-center text-whatsapp">
+                            <i data-lucide="smartphone" class="w-8 h-8"></i>
+                        </div>
+                    </div>
+                    <p class="text-center text-xs text-gray-400">Waiting for M-Pesa SIM ToolKit prompt...</p>
+                </div>
+
+                <!-- STK Push Dialog Box (Pop-up inside phone) -->
+                <div id="stkDialog" class="bg-gray-100 text-gray-900 rounded-xl p-4 shadow-2xl space-y-3 relative z-30 transition-all scale-100">
+                    <div class="text-center border-b border-gray-300 pb-2">
+                        <div class="font-bold text-sm tracking-wide text-green-700 uppercase">M-PESA</div>
+                        <div class="text-[11px] text-gray-600">PayBill Online</div>
+                    </div>
+
+                    <div class="text-xs space-y-1">
+                        <p>Pay <span id="modalMerchant">Business Shortcode</span></p>
+                        <p class="font-bold">KES <span id="modalAmount">1.00</span> for <span id="modalRef">INV-1001</span>?</p>
+                        <p class="text-[10px] text-gray-500 pt-1">Enter M-Pesa PIN to authorize payment:</p>
+                    </div>
+
+                    <input type="password" maxlength="4" placeholder="••••" 
+                           class="w-full bg-white border border-gray-400 rounded p-1.5 text-center font-mono text-base tracking-widest focus:outline-none focus:border-green-600 text-black">
+
+                    <div class="grid grid-cols-2 gap-2 pt-1">
+                        <button onclick="closePhoneModal(false)" class="bg-gray-300 hover:bg-gray-400 text-gray-800 text-xs py-1.5 rounded font-semibold transition-colors">
+                            Cancel
+                        </button>
+                        <button onclick="closePhoneModal(true)" class="bg-green-600 hover:bg-green-700 text-white text-xs py-1.5 rounded font-semibold transition-colors">
+                            Send PIN
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Footer Notch indicator -->
+                <div class="w-24 h-1 bg-gray-700 rounded-full mx-auto mt-4"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Simple Footer -->
+    <footer class="border-t border-gray-800 bg-gray-900 py-4 text-center text-xs text-gray-500">
+        WhatsApp Invoice Bot & Safe M-Pesa Integration • Built with FastAPI & Gemini 2.5
+    </footer>
+
+    <!-- Interactive Dashboard Script Logic -->
+    <script>
+        // Initialize Lucide Icons
+        lucide.createIcons();
+
+        let lastParsedInvoice = null;
+
+        // Get Base URL from header input
+        function getApiHost() {
+            const isMobile = window.innerWidth < 768;
+            const input = isMobile ? document.getElementById('apiHostMobile') : document.getElementById('apiHost');
+            let host = input.value.trim();
+            if (host.endsWith('/')) {
+                host = host.slice(0, -1);
+            }
+            return host;
+        }
+
+        // Set Text Area Presets
+        function setPreset(text) {
+            document.getElementById('userMessage').value = text;
+        }
+
+        // 1. AI Invoice Parser Execution
+        async function executeParseInvoice() {
+            const btn = document.getElementById('btnParseInvoice');
+            const output = document.getElementById('parseJsonOutput');
+            const badge = document.getElementById('parseStatusBadge');
+            const message = document.getElementById('userMessage').value;
+
+            if (!message.trim()) {
+                alert('Please enter a message to parse.');
+                return;
+            }
+
+            // UI Loading State
+            btn.disabled = true;
+            btn.classList.add('opacity-75');
+            output.textContent = '// Sending prompt to Gemini AI... Please wait...';
+            badge.classList.add('hidden');
+
+            try {
+                const host = getApiHost();
+                const response = await fetch(`${host}/parse-invoice`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_message: message })
+                });
+
+                const data = await response.json();
+                
+                // Display formatted JSON
+                output.textContent = JSON.stringify(data, null, 2);
+                badge.classList.remove('hidden');
+                
+                if (response.ok) {
+                    badge.textContent = `${response.status} OK`;
+                    badge.className = 'text-xs font-mono px-2 py-0.5 rounded bg-whatsapp/20 text-whatsapp';
+                    if (data.invoice) {
+                        lastParsedInvoice = data.invoice;
+                    }
+                } else {
+                    badge.textContent = `${response.status} Error`;
+                    badge.className = 'text-xs font-mono px-2 py-0.5 rounded bg-red-900/50 text-red-400';
+                }
+
+            } catch (err) {
+                output.textContent = `// Error connecting to backend:\n${err.message}\n\nMake sure your Render URL is correct and active.`;
+                badge.textContent = 'Network Error';
+                badge.className = 'text-xs font-mono px-2 py-0.5 rounded bg-red-900/50 text-red-400';
+                badge.classList.remove('hidden');
+            } finally {
+                btn.disabled = false;
+                btn.classList.remove('opacity-75');
+            }
+        }
+
+        // Auto fill STK Form from AI Output
+        function copyParsedAmountToStk() {
+            if (!lastParsedInvoice) {
+                alert('Parse an invoice first to extract total amount!');
+                return;
+            }
+            if (lastParsedInvoice.total_amount) {
+                document.getElementById('stkAmount').value = lastParsedInvoice.total_amount;
+            }
+            if (lastParsedInvoice.customer_name) {
+                document.getElementById('stkRef').value = `INV-${lastParsedInvoice.customer_name.toUpperCase()}`;
+            }
+        }
+
+        // 2. M-Pesa STK Push Execution
+        async function executeStkPush() {
+            const btn = document.getElementById('btnStkPush');
+            const output = document.getElementById('stkJsonOutput');
+            const badge = document.getElementById('stkStatusBadge');
+            
+            const phone = document.getElementById('stkPhone').value.trim();
+            const amount = parseFloat(document.getElementById('stkAmount').value);
+            const ref = document.getElementById('stkRef').value.trim();
+
+            if (!phone || isNaN(amount)) {
+                alert('Please provide a valid phone number and amount.');
+                return;
+            }
+
+            // UI Loading State
+            btn.disabled = true;
+            btn.classList.add('opacity-75');
+            output.textContent = '// Triggering STK Push request...';
+            badge.classList.add('hidden');
+
+            try {
+                const host = getApiHost();
+                const response = await fetch(`${host}/stk-push`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        phone_number: phone,
+                        amount: amount,
+                        account_reference: ref
+                    })
+                });
+
+                const data = await response.json();
+                output.textContent = JSON.stringify(data, null, 2);
+                badge.classList.remove('hidden');
+
+                if (response.ok) {
+                    badge.textContent = `${response.status} OK`;
+                    badge.className = 'text-xs font-mono px-2 py-0.5 rounded bg-green-900/50 text-green-400';
+                    
+                    // Show phone modal simulation
+                    triggerPhoneSimulation(amount, ref);
+                } else {
+                    badge.textContent = `${response.status} Error`;
+                    badge.className = 'text-xs font-mono px-2 py-0.5 rounded bg-red-900/50 text-red-400';
+                }
+
+            } catch (err) {
+                output.textContent = `// Error triggering STK Push:\n${err.message}`;
+                badge.textContent = 'Network Error';
+                badge.className = 'text-xs font-mono px-2 py-0.5 rounded bg-red-900/50 text-red-400';
+                badge.classList.remove('hidden');
+            } finally {
+                btn.disabled = false;
+                btn.classList.remove('opacity-75');
+            }
+        }
+
+        // Phone Simulation Popup Control
+        function triggerPhoneSimulation(amount, ref) {
+            document.getElementById('modalAmount').textContent = amount.toFixed(2);
+            document.getElementById('modalRef').textContent = ref || 'INV-1001';
+            document.getElementById('modalMerchant').textContent = '174379 (Paybill)';
+            
+            const modal = document.getElementById('phoneModal');
+            modal.classList.remove('hidden');
+        }
+
+        function closePhoneModal(success) {
+            const modal = document.getElementById('phoneModal');
+            modal.classList.add('hidden');
+            
+            if (success) {
+                const stkOutput = document.getElementById('stkJsonOutput');
+                stkOutput.textContent += '\n\n// [SIMULATION] User entered PIN and completed payment!';
+            }
+        }
+    </script>
+</body>
+</html>
